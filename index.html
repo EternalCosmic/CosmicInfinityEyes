@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mars Relay Network - 3D Simulation</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #000;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #fff;
+    }
+
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    /* Telemetry Header UI Overlay */
+    .overlay {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      z-index: 10;
+      pointer-events: none;
+      user-select: none;
+      text-shadow: 0 0 8px rgba(0,0,0,0.8);
+    }
+
+    .timestamp {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      font-family: monospace;
+    }
+
+    .subtext {
+      font-size: 0.8rem;
+      color: #88aaff;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* Satellite Label Styling */
+    .label {
+      position: absolute;
+      color: #70d6ff;
+      font-family: monospace;
+      font-size: 0.75rem;
+      pointer-events: none;
+      transform: translate(-50%, -100%);
+      white-space: nowrap;
+      text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
+    }
+  </style>
+
+  <!-- Three.js and OrbitControls CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+  <div class="overlay">
+    <div class="subtext">Mars Relay Network Simulation</div>
+    <div class="timestamp" id="clock">00:00:00 UTC</div>
+    <div class="subtext" id="sol-counter">SOL 5060 — SCET</div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script>
+    // --- Scene Setup ---
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(
+      45, 
+      window.innerWidth / window.innerHeight, 
+      0.1, 
+      1000
+    );
+    camera.position.set(0, 8, 18);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxDistance = 50;
+    controls.minDistance = 4;
+
+    // --- Lighting ---
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    sunLight.position.set(10, 5, 10);
+    scene.add(sunLight);
+
+    const ambientLight = new THREE.AmbientLight(0x222233, 0.4);
+    scene.add(ambientLight);
+
+    // --- Starfield Background ---
+    const starGeometry = new THREE.BufferGeometry();
+    const starCount = 3000;
+    const starPositions = new Float32Array(starCount * 3);
+
+    for (let i = 0; i < starCount * 3; i++) {
+      starPositions[i] = (Math.random() - 0.5) * 500;
+    }
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7 });
+    const starField = new THREE.Points(starGeometry, starMaterial);
+    scene.add(starField);
+
+    // --- Mars Globe ---
+    const textureLoader = new THREE.TextureLoader();
+    // Public NASA Mars Surface Map Texture
+    const marsTexture = textureLoader.load(
+      'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/mars_1k_color.jpg'
+    );
+
+    const marsGeometry = new THREE.SphereGeometry(2, 64, 64);
+    const marsMaterial = new THREE.MeshStandardMaterial({
+      map: marsTexture,
+      roughness: 0.8,
+      metalness: 0.1
+    });
+    const mars = new THREE.Mesh(marsGeometry, marsMaterial);
+    scene.add(mars);
+
+    // --- Satellites & Orbits Data ---
+    const satellitesData = [
+      { name: "MRO", radius: 3.2, speed: 0.008, color: 0x00f0ff, inclination: 0.3 },
+      { name: "ODY", radius: 4.0, speed: 0.005, color: 0xffa500, inclination: -0.2 },
+      { name: "MEX", radius: 5.5, speed: 0.003, color: 0x00ff66, inclination: 0.6 }
+    ];
+
+    const satellites = [];
+
+    satellitesData.forEach(data => {
+      // Create Orbit Path Line
+      const orbitCurve = new THREE.EllipseCurve(
+        0, 0,
+        data.radius, data.radius,
+        0, 2 * Math.PI,
+        false,
+        0
+      );
+      const points = orbitCurve.getPoints(100);
+      const orbitGeometry = new THREE.BufferGeometry().setFromPoints(
+        points.map(p => new THREE.Vector3(p.x, 0, p.y))
+      );
+      const orbitMaterial = new THREE.LineBasicMaterial({ 
+        color: data.color, 
+        transparent: true, 
+        opacity: 0.3 
+      });
+      const orbitLine = new THREE.LineLoop(orbitGeometry, orbitMaterial);
+      orbitLine.rotation.x = data.inclination;
+      scene.add(orbitLine);
+
+      // Create Satellite Marker
+      const satGeometry = new THREE.SphereGeometry(0.08, 16, 16);
+      const satMaterial = new THREE.MeshBasicMaterial({ color: data.color });
+      const satMesh = new THREE.Mesh(satGeometry, satMaterial);
+      scene.add(satMesh);
+
+      // Create HTML Label
+      const labelDiv = document.createElement('div');
+      labelDiv.className = 'label';
+      labelDiv.innerText = data.name;
+      document.body.appendChild(labelDiv);
+
+      satellites.push({
+        mesh: satMesh,
+        radius: data.radius,
+        speed: data.speed,
+        inclination: data.inclination,
+        angle: Math.random() * Math.PI * 2,
+        labelElement: labelDiv
+      });
+    });
+
+    // --- Clock Logic ---
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').innerText = now.toUTCString().split(' ')[4] + " UTC";
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // --- Animation Loop ---
+    const tempV = new THREE.Vector3();
+    
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Slow rotation of Mars
+      mars.rotation.y += 0.001;
+
+      // Update Satellite Positions & Labels
+      satellites.forEach(sat => {
+        sat.angle += sat.speed;
+
+        // Position calculations with inclination angle
+        const x = Math.cos(sat.angle) * sat.radius;
+        const z = Math.sin(sat.angle) * sat.radius;
+        const y = Math.sin(sat.angle) * Math.sin(sat.inclination) * (sat.radius * 0.5);
+
+        sat.mesh.position.set(x, y, z);
+
+        // Project 3D positions onto 2D Screen for HTML labels
+        sat.mesh.getWorldPosition(tempV);
+        tempV.project(camera);
+
+        // Convert normalized device coordinates (-1 to +1) to CSS pixels
+        const xPx = (tempV.x *  .5 + .5) * window.innerWidth;
+        const yPx = (tempV.y * -.5 + .5) * window.innerHeight;
+
+        // Check if satellite is behind Mars relative to camera
+        if (tempV.z > 1) {
+          sat.labelElement.style.display = 'none';
+        } else {
+          sat.labelElement.style.display = 'block';
+          sat.labelElement.style.transform = `translate(-50%, -100%) translate(${xPx}px,${yPx}px)`;
+        }
+      });
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // --- Window Resizing ---
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
